@@ -46,7 +46,7 @@ class SpeakerRegistry:
         if self.speakers_dir.exists():
             for pt_file in self.speakers_dir.glob("*.pt"):
                 sid = pt_file.stem
-                self._embeddings[sid] = torch.load(pt_file, weights_only=True)
+                self._embeddings[sid] = torch.load(pt_file, weights_only=True, map_location="cpu")
 
     def get_label(self, speaker_id: str) -> str:
         """Get display name for a speaker ID."""
