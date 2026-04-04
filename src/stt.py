@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -32,9 +34,24 @@ class SttSegment:
     text: str
 
 
+def _load_vocabulary(vocab_path: Path) -> str:
+    """Load vocabulary.md and return comma-separated terms for ASR context."""
+    if not vocab_path.exists():
+        return ""
+    terms: list[str] = []
+    for line in vocab_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^-\s+(.+)$", line)
+        if m:
+            terms.append(m.group(1).strip())
+    return ", ".join(terms)
+
+
 class SttProcessor:
-    def __init__(self, config: SttConfig) -> None:
+    def __init__(self, config: SttConfig, speakers_dir: Path | None = None) -> None:
         self.config = config
+        self._context = ""
+        if speakers_dir:
+            self._context = _load_vocabulary(speakers_dir / "vocabulary.md")
         dtype = TORCH_DTYPES.get(config.torch_dtype, torch.float32)
 
         if "qwen" in config.model_name.lower():
@@ -81,6 +98,7 @@ class SttProcessor:
             results = self._model.transcribe(
                 audio=[(audio.astype(np.float32), sample_rate)],
                 language=_LANG_TO_QWEN.get(self.config.language, self.config.language),
+                context=self._context,
             )
             text = results[0].text.strip() if results else ""
         else:
@@ -100,6 +118,7 @@ class SttProcessor:
         results = self._model.transcribe(
             audio=[(audio.astype(np.float32), sample_rate)],
             language=_LANG_TO_QWEN.get(self.config.language, self.config.language),
+            context=self._context,
         )
         text = results[0].text.strip() if results else ""
         if not text:

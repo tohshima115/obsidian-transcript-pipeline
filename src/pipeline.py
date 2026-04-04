@@ -35,7 +35,7 @@ class Pipeline:
         self.speaker_id = SpeakerIdentifier(config.speaker_id, self.registry)
 
         print("Loading STT...")
-        self.stt = SttProcessor(config.stt)
+        self.stt = SttProcessor(config.stt, speakers_dir=Path(config.paths.speakers_dir))
 
         print("Loading LLM processor...")
         self.llm = LlmProcessor(config.llm)
