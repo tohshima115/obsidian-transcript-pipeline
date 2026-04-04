@@ -17,8 +17,14 @@ samples/*.m4a
 samples/*.flac
 samples/*.ogg
 
+# Audio files (large)
+*.wav
+
 # Models cache
 models/
+.cache/
+.torch/
+.huggingface/
 
 # Environment
 .env

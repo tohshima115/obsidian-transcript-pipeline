@@ -44,7 +44,7 @@ class SttProcessor:
             self._model = Qwen3ASRModel.from_pretrained(
                 config.model_name,
                 dtype=dtype,
-                device_map=config.device + ":0" if ":" not in config.device else config.device,
+                device_map="cpu" if config.device == "cpu" else (config.device + ":0" if ":" not in config.device else config.device),
                 max_new_tokens=256,
             )
         else:

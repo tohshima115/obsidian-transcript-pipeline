@@ -1,0 +1,22 @@
+FROM --platform=linux/arm64 python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libsndfile1 git && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+    "transformers>=4.52" \
+    "speechbrain>=1.0" \
+    "numpy>=2.0" \
+    "soundfile>=0.13" \
+    "accelerate>=0.30"
+
+# qwen-asr may not be available on PyPI; benchmark handles gracefully
+RUN pip install --no-cache-dir qwen-asr || true
+
+COPY . /app
+WORKDIR /app
+ENV PYTHONPATH=/app
