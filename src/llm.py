@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,14 +13,13 @@ from src.config import LlmConfig
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
-あなたは会話の文字起こしからメタデータを生成するアシスタントです。
-以下の情報を日本語で生成してください。
+TITLE_SUMMARY_PROMPT = """\
+あなたは会話の文字起こしからタイトルと要約を生成するアシスタントです。
 
 ## 出力形式
 必ず以下のJSON形式のみを出力してください。説明文は不要です。
 ```json
-{"title": "...", "summary": "...", "tags": ["...", "..."]}
+{"title": "...", "summary": "..."}
 ```
 
 ## title
@@ -27,20 +27,30 @@ SYSTEM_PROMPT = """\
 - ファイル名に使うため、スラッシュ(/)やバックスラッシュ(\\)は使わない
 
 ## summary
-- 会話内容の要約を2-3文で簡潔に記述
+- 会話内容の要約を2-3文で簡潔に記述\
+"""
 
-## tags（必須ルール）
-- 英語のASCII小文字のみ使用（日本語・カタカナ・漢字は禁止）
-- 例: "design", "3d-printer", "fashion" ○ / "デザイン", "ファッション" ×
-- スペース不可。ハイフン(-)、アンダースコア(_)、スラッシュ(/)で単語を区切る
-- コンテンツタグのみ許可（トピック・主題を表すタグ）
-- 禁止: ステータスタグ(#done等)、時間タグ(#2023等)、場所タグ(#tokyo等)
-- 単数形を使用（#note, not #notes）
-- 具体的かつ簡潔に（#marketing-strategy ○、#strategy ×）
-- 略語は広く認知されているもののみ（ai, ui等）
-- 固有名詞は公式名称を使用
-- 最大5個
-- 禁止タグ: todo, routine, daily-routine, journal, study, exercise 関連\
+TAGS_PROMPT = """\
+You are a tag generator for conversation transcripts.
+Output ONLY a JSON array of tags. No explanation, no other text.
+
+```json
+["tag1", "tag2", "tag3"]
+```
+
+## Rules (STRICTLY ENFORCED)
+- ASCII lowercase English ONLY (a-z, 0-9, hyphens, underscores, slashes)
+- FORBIDDEN: Japanese, katakana, kanji, uppercase letters
+- Good: "design", "3d-printer", "fashion" / Bad: "デザイン", "Design"
+- Use hyphens (-), underscores (_), or slashes (/) to separate words
+- Content tags only (topic/subject of the conversation)
+- Forbidden: status tags (#done), time tags (#2023), location tags (#tokyo)
+- Use singular form (#note, not #notes)
+- Be specific and concise (#marketing-strategy, not #strategy)
+- Only use widely recognized abbreviations (ai, ui)
+- Use official names for proper nouns
+- Maximum 5 tags
+- Forbidden topics: todo, routine, daily-routine, journal, study, exercise\
 """
 
 
@@ -77,7 +87,6 @@ def _parse_md_frontmatter(text: str) -> tuple[dict, str]:
     if not m:
         return {}, text.strip()
     fm_raw, body = m.group(1), m.group(2).strip()
-    # Simple YAML key: value parser (no nested structures needed)
     fm: dict[str, str] = {}
     for line in fm_raw.split("\n"):
         if ":" in line:
@@ -104,23 +113,14 @@ def _load_profiles(speakers_dir: Path) -> dict[str, dict]:
     return profiles
 
 
-def _parse_response(text: str) -> ConversationMetadata:
-    """Parse LLM JSON response into ConversationMetadata."""
-    # Strip markdown code fences if present
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences from LLM output."""
     cleaned = text.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Remove first and last lines (fences)
         lines = [l for l in lines if not l.strip().startswith("```")]
         cleaned = "\n".join(lines).strip()
-
-    data = json.loads(cleaned)
-    tags = [t.lower().strip() for t in data.get("tags", [])][:5]
-    return ConversationMetadata(
-        title=data["title"],
-        summary=data["summary"],
-        tags=tags,
-    )
+    return cleaned
 
 
 class LlmProcessor:
@@ -129,28 +129,45 @@ class LlmProcessor:
         self.profiles = _load_profiles(config.speakers_dir)
         self.client = httpx.Client(timeout=120.0)
 
+    def _call(self, system: str, user: str) -> str:
+        """Send a chat completion request and return the content."""
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": self.config.max_tokens,
+            "temperature": self.config.temperature,
+        }
+        resp = self.client.post(self.config.endpoint, json=payload)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+
     def generate_metadata(
         self,
         transcript_text: str,
         speakers: dict[str, str],
     ) -> ConversationMetadata:
-        """Generate title, summary, and tags from transcript text."""
+        """Generate title, summary, and tags in parallel."""
         speaker_context = _build_speaker_context(self.profiles, speakers)
         user_content = f"{speaker_context}\n\n## 会話内容\n{transcript_text}"
 
-        payload = {
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature,
-        }
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            title_future = pool.submit(self._call, TITLE_SUMMARY_PROMPT, user_content)
+            tags_future = pool.submit(self._call, TAGS_PROMPT, user_content)
 
-        resp = self.client.post(self.config.endpoint, json=payload)
-        resp.raise_for_status()
+            title_raw = _strip_fences(title_future.result())
+            tags_raw = _strip_fences(tags_future.result())
 
-        result = resp.json()
-        content = result["choices"][0]["message"]["content"]
-        return _parse_response(content)
+        title_data = json.loads(title_raw)
+        tags_list = json.loads(tags_raw)
+
+        # Enforce ASCII lowercase for tags
+        tags = [t.lower().strip() for t in tags_list if t.isascii()][:5]
+
+        return ConversationMetadata(
+            title=title_data["title"],
+            summary=title_data["summary"],
+            tags=tags,
+        )
