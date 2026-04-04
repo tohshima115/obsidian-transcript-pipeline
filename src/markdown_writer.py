@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,6 +31,9 @@ class ConversationData:
     speakers: list[str]
     lines: list[TranscriptLine]
     has_unknown_speakers: bool = False
+    title: str = ""
+    summary: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 def _icon_for(speaker_id: str) -> str:
@@ -37,6 +42,18 @@ def _icon_for(speaker_id: str) -> str:
     if speaker_id.startswith("spk_"):
         return SPEAKER_ICONS["unknown"]
     return SPEAKER_ICONS["known"]
+
+
+def _sanitize_filename(title: str) -> str:
+    """Convert title to a safe filename component."""
+    # Remove characters unsafe for filesystems
+    sanitized = re.sub(r'[\\/:*?"<>|\n\r]', '', title)
+    # Collapse whitespace to underscore
+    sanitized = re.sub(r'\s+', '_', sanitized.strip())
+    # Limit length to avoid filesystem issues
+    if len(sanitized) > 80:
+        sanitized = sanitized[:80]
+    return sanitized
 
 
 class MarkdownWriter:
@@ -49,18 +66,20 @@ class MarkdownWriter:
         day_dir = self.output_dir / conversation.date
         day_dir.mkdir(parents=True, exist_ok=True)
 
-        # Filename: conversation_HHMMSS.md
-        time_slug = conversation.start_time.replace(":", "") + "00"
-        file_path = day_dir / f"conversation_{time_slug}.md"
-
-        # Tags
-        tags = ["omi", "auto-transcript"]
-        if conversation.has_unknown_speakers:
-            tags.append("unknown-speaker")
+        # Filename: yyyy-mm-dd_{title}.md or fallback to conversation_HHMMSS.md
+        if conversation.title:
+            safe_title = _sanitize_filename(conversation.title)
+            file_path = day_dir / f"{conversation.date}_{safe_title}.md"
+        else:
+            time_slug = conversation.start_time.replace(":", "") + "00"
+            file_path = day_dir / f"conversation_{time_slug}.md"
 
         # Frontmatter
         speakers_yaml = "[" + ", ".join(conversation.speakers) + "]"
-        tags_yaml = "[" + ", ".join(tags) + "]"
+        tags_yaml = "[" + ", ".join(conversation.tags) + "]" if conversation.tags else "[]"
+
+        # Title for heading and frontmatter
+        display_title = conversation.title or f"会話 {conversation.start_time}\u301c{conversation.end_time}"
 
         lines = [
             "---",
@@ -71,11 +90,22 @@ class MarkdownWriter:
             "type: conversation",
             f"speakers: {speakers_yaml}",
             f"tags: {tags_yaml}",
+            f'title: "{display_title}"',
+        ]
+        if conversation.summary:
+            # Escape quotes in summary for YAML
+            escaped_summary = conversation.summary.replace('"', '\\"')
+            lines.append(f'summary: "{escaped_summary}"')
+        lines += [
             "---",
             "",
-            f"# 会話 {conversation.start_time}\u301c{conversation.end_time}",
+            f"# {display_title}",
             "",
         ]
+
+        # Summary section
+        if conversation.summary:
+            lines += [f"> {conversation.summary}", ""]
 
         # Transcript lines
         for tl in conversation.lines:

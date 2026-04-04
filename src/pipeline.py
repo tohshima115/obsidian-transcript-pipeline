@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -8,11 +10,14 @@ import soundfile as sf
 
 from src.config import AppConfig
 from src.hallucination_filter import filter_hallucination_loops
+from src.llm import LlmProcessor
 from src.markdown_writer import ConversationData, MarkdownWriter, TranscriptLine
 from src.speaker_id import SpeakerIdentifier
 from src.speaker_registry import SpeakerRegistry
 from src.stt import SttProcessor, SttSegment
 from src.vad import VadProcessor
+
+logger = __import__("logging").getLogger(__name__)
 
 
 class Pipeline:
@@ -32,15 +37,35 @@ class Pipeline:
         print("Loading STT...")
         self.stt = SttProcessor(config.stt)
 
+        print("Loading LLM processor...")
+        self.llm = LlmProcessor(config.llm)
+
         self.writer = MarkdownWriter(config.paths)
         print("Pipeline ready.")
 
     def process_file(self, audio_path: str | Path, timestamp: datetime | None = None) -> Path:
-        """Process a single audio file through the full pipeline."""
+        """Process a single audio file through the full pipeline.
+
+        Supports WAV directly. For other formats (Ogg Opus, etc.),
+        converts to WAV via ffmpeg automatically.
+        """
         audio_path = Path(audio_path)
-        audio, sr = sf.read(str(audio_path), dtype="float32")
         if timestamp is None:
             timestamp = datetime.now()
+
+        if audio_path.suffix.lower() in (".ogg", ".opus", ".mp3", ".m4a", ".flac"):
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                wav_path = Path(tmp.name)
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-i", str(audio_path), "-ar", "16000", "-ac", "1", "-f", "wav", str(wav_path), "-y"],
+                    check=True, capture_output=True,
+                )
+                audio, sr = sf.read(str(wav_path), dtype="float32")
+            finally:
+                wav_path.unlink(missing_ok=True)
+        else:
+            audio, sr = sf.read(str(audio_path), dtype="float32")
 
         return self.process_audio(audio, sr, timestamp)
 
@@ -126,6 +151,18 @@ class Pipeline:
             lines=transcript_lines,
             has_unknown_speakers=has_unknown,
         )
+
+        # 5.5. LLM metadata generation (title, summary, tags)
+        try:
+            transcript_text = "\n".join(
+                f"{tl.label}: {tl.text}" for tl in transcript_lines
+            )
+            metadata = self.llm.generate_metadata(transcript_text, seen_speakers)
+            conversation.title = metadata.title
+            conversation.summary = metadata.summary
+            conversation.tags = metadata.tags
+        except Exception as e:
+            logger.warning("LLM metadata generation failed, using fallback: %s", e)
 
         # 6. Write markdown
         return self.writer.write(conversation)

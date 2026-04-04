@@ -46,12 +46,22 @@ class HallucinationConfig:
 
 
 @dataclass(frozen=True)
+class LlmConfig:
+    endpoint: str
+    model: str
+    max_tokens: int
+    temperature: float
+    speakers_dir: Path
+
+
+@dataclass(frozen=True)
 class AppConfig:
     vad: VadConfig
     stt: SttConfig
     speaker_id: SpeakerIdConfig
     paths: PathsConfig
     hallucination: HallucinationConfig
+    llm: LlmConfig
 
 
 def load_config(path: str | Path = "config.toml") -> AppConfig:
@@ -75,4 +85,11 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
             registry_file=Path(raw["paths"]["registry_file"]),
         ),
         hallucination=HallucinationConfig(**raw["hallucination"]),
+        llm=LlmConfig(
+            endpoint=raw["llm"]["endpoint"],
+            model=raw["llm"]["model"],
+            max_tokens=raw["llm"]["max_tokens"],
+            temperature=raw["llm"]["temperature"],
+            speakers_dir=Path(raw["paths"]["speakers_dir"]),
+        ),
     )

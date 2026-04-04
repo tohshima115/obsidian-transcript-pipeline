@@ -10,15 +10,15 @@ model_name = "Qwen/Qwen3-ASR-1.7B"
 chunk_length_s = 30
 stride_length_s = [4, 4]
 language = "ja"
-device = "cuda"
-torch_dtype = "float16"
+device = "cpu"
+torch_dtype = "float32"
 
 [speaker_id]
 model_name = "speechbrain/spkrec-ecapa-voxceleb"
 known_threshold = 0.55
 unknown_threshold = 0.25
 min_segment_duration_s = 0.5
-device = "cuda"
+device = "cpu"
 
 [paths]
 speakers_dir = "output/transcripts/_speakers"
@@ -27,3 +27,9 @@ registry_file = "output/transcripts/_speakers/registry.md"
 
 [hallucination]
 max_consecutive_repeats = 3
+
+[llm]
+endpoint = "http://localhost:8080/v1/chat/completions"
+model = "qwen3.5-9b"
+max_tokens = 256
+temperature = 0.3
