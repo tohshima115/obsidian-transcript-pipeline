@@ -31,5 +31,5 @@ max_consecutive_repeats = 3
 [llm]
 endpoint = "http://localhost:8080/v1/chat/completions"
 model = "qwen3.5-9b"
-max_tokens = 256
+max_tokens = 1024
 temperature = 0.3
