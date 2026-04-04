@@ -13,7 +13,6 @@ from src.config import LlmConfig
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-/no_think
 あなたは会話の文字起こしからメタデータを生成するアシスタントです。
 以下の情報を日本語で生成してください。
 
