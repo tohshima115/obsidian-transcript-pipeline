@@ -1,0 +1,38 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Test audio and output
+test_audio/
+output/
+
+# Speaker samples (keep directory, ignore audio files)
+samples/*.wav
+samples/*.mp3
+samples/*.m4a
+samples/*.flac
+samples/*.ogg
+
+# Models cache
+models/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Zone.Identifier files (WSL)
+*:Zone.Identifier

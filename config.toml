@@ -1,0 +1,29 @@
+[vad]
+threshold = 0.5
+min_speech_duration_ms = 250
+min_silence_duration_ms = 100
+window_size_samples = 512
+merge_max_gap_s = 0.3
+
+[stt]
+model_name = "Qwen/Qwen3-ASR-1.7B"
+chunk_length_s = 30
+stride_length_s = [4, 4]
+language = "ja"
+device = "cuda"
+torch_dtype = "float16"
+
+[speaker_id]
+model_name = "speechbrain/spkrec-ecapa-voxceleb"
+known_threshold = 0.55
+unknown_threshold = 0.25
+min_segment_duration_s = 0.5
+device = "cuda"
+
+[paths]
+speakers_dir = "output/transcripts/_speakers"
+output_dir = "output/transcripts"
+registry_file = "output/transcripts/_speakers/registry.md"
+
+[hallucination]
+max_consecutive_repeats = 3
