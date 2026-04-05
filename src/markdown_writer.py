@@ -66,20 +66,20 @@ class MarkdownWriter:
         day_dir = self.output_dir / conversation.date
         day_dir.mkdir(parents=True, exist_ok=True)
 
-        # Filename: yyyy-mm-dd_{title}.md or fallback to conversation_HHMMSS.md
+        # Filename: HH-MM_{title}.md or HH-MM.md if no title
+        time_slug = conversation.start_time.replace(":", "-")
         if conversation.title:
             safe_title = _sanitize_filename(conversation.title)
-            file_path = day_dir / f"{conversation.date}_{safe_title}.md"
+            file_path = day_dir / f"{time_slug}_{safe_title}.md"
         else:
-            time_slug = conversation.start_time.replace(":", "") + "00"
-            file_path = day_dir / f"conversation_{time_slug}.md"
+            file_path = day_dir / f"{time_slug}.md"
 
         # Frontmatter
         speakers_yaml = "[" + ", ".join(conversation.speakers) + "]"
         tags_yaml = "[" + ", ".join(conversation.tags) + "]" if conversation.tags else "[]"
 
-        # Title for heading and frontmatter
-        display_title = conversation.title or f"会話 {conversation.start_time}\u301c{conversation.end_time}"
+        # Heading
+        heading = conversation.title or f"会話 {conversation.start_time}\u301c{conversation.end_time}"
 
         lines = [
             "---",
@@ -87,19 +87,16 @@ class MarkdownWriter:
             f'start: "{conversation.start_time}"',
             f'end: "{conversation.end_time}"',
             f"duration_sec: {conversation.duration_sec}",
-            "type: conversation",
             f"speakers: {speakers_yaml}",
             f"tags: {tags_yaml}",
-            f'title: "{display_title}"',
         ]
         if conversation.summary:
-            # Escape quotes in summary for YAML
             escaped_summary = conversation.summary.replace('"', '\\"')
             lines.append(f'summary: "{escaped_summary}"')
         lines += [
             "---",
             "",
-            f"# {display_title}",
+            f"# {heading}",
             "",
         ]
 
