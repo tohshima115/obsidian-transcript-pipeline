@@ -31,6 +31,9 @@ class SpeakerIdConfig:
     unknown_threshold: float
     min_segment_duration_s: float
     device: str
+    spk_match_threshold: float = 0.20
+    merge_threshold: float = 0.30
+    embedding_update_alpha: float = 0.8
 
 
 @dataclass(frozen=True)

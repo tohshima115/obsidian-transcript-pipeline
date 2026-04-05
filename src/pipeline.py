@@ -111,13 +111,15 @@ class Pipeline:
             raise ValueError("No text segments after filtering")
 
         # 4. Speaker ID for each surviving segment
-        for stt_seg in stt_segments:
+        self.speaker_id.reset_pending()
+
+        for seg_i, stt_seg in enumerate(stt_segments):
             start_sample = int(stt_seg.start_s * sample_rate)
             end_sample = min(int(stt_seg.end_s * sample_rate), len(audio))
             seg_audio = audio[start_sample:end_sample]
 
             if len(seg_audio) / sample_rate >= self.config.speaker_id.min_segment_duration_s:
-                speaker = self.speaker_id.identify(seg_audio, sample_rate)
+                speaker = self.speaker_id.identify(seg_audio, sample_rate, segment_index=seg_i)
                 speaker_id = speaker.speaker_id
                 label = speaker.label
             else:
@@ -136,6 +138,19 @@ class Pipeline:
                     text=stt_seg.text,
                 )
             )
+
+        # 4.5. Resolve pending unknown speakers (conversation-level clustering)
+        resolved = self.speaker_id.resolve_pending()
+        if resolved:
+            has_unknown = True
+            for seg_i, result in resolved.items():
+                transcript_lines[seg_i] = TranscriptLine(
+                    speaker_id=result.speaker_id,
+                    label=result.label,
+                    offset_s=transcript_lines[seg_i].offset_s,
+                    text=transcript_lines[seg_i].text,
+                )
+                seen_speakers[result.speaker_id] = result.label
 
         # 5. Build conversation data
         conv_end = vad_segments[-1].end_s

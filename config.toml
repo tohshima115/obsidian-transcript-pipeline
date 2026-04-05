@@ -17,6 +17,9 @@ torch_dtype = "float32"
 model_name = "speechbrain/spkrec-ecapa-voxceleb"
 known_threshold = 0.55
 unknown_threshold = 0.25
+spk_match_threshold = 0.20
+merge_threshold = 0.30
+embedding_update_alpha = 0.8
 min_segment_duration_s = 0.5
 device = "cpu"
 

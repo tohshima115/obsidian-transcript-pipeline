@@ -89,6 +89,18 @@ class SpeakerRegistry:
             self.speakers_dir.mkdir(parents=True, exist_ok=True)
             self.registry_file.write_text(REGISTRY_HEADER, encoding="utf-8")
 
+    def update_embedding(
+        self, speaker_id: str, new_embedding: torch.Tensor, alpha: float = 0.8
+    ) -> None:
+        """Update a speaker's embedding as a weighted average with the new one."""
+        existing = self._embeddings.get(speaker_id)
+        if existing is None:
+            return
+        blended = alpha * existing + (1 - alpha) * new_embedding
+        blended = torch.nn.functional.normalize(blended, dim=0)
+        torch.save(blended, self.speakers_dir / f"{speaker_id}.pt")
+        self._embeddings[speaker_id] = blended
+
     def save_embedding(self, speaker_id: str, embedding: torch.Tensor) -> None:
         """Save an embedding for a known speaker (e.g., 'me')."""
         self.speakers_dir.mkdir(parents=True, exist_ok=True)
