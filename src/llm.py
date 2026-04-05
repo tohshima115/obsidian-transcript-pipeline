@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -113,14 +112,19 @@ def _load_profiles(speakers_dir: Path) -> dict[str, dict]:
     return profiles
 
 
-def _strip_fences(text: str) -> str:
-    """Strip markdown code fences from LLM output."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        cleaned = "\n".join(lines).strip()
-    return cleaned
+def _extract_json(text: str, kind: str = "object") -> str:
+    """Extract the first JSON object or array from LLM output.
+
+    Handles markdown fences, preamble text, and trailing explanations.
+    kind: "object" to find {...}, "array" to find [...]
+    """
+    if kind == "array":
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+    else:
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        return m.group(0)
+    return text.strip()
 
 
 class LlmProcessor:
@@ -149,19 +153,23 @@ class LlmProcessor:
         transcript_text: str,
         speakers: dict[str, str],
     ) -> ConversationMetadata:
-        """Generate title, summary, and tags in parallel."""
+        """Generate title, summary, and tags sequentially."""
         speaker_context = _build_speaker_context(self.profiles, speakers)
         user_content = f"{speaker_context}\n\n## 会話内容\n{transcript_text}"
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            title_future = pool.submit(self._call, TITLE_SUMMARY_PROMPT, user_content)
-            tags_future = pool.submit(self._call, TAGS_PROMPT, user_content)
+        title_raw = self._call(TITLE_SUMMARY_PROMPT, user_content)
+        tags_raw = self._call(TAGS_PROMPT, user_content)
 
-            title_raw = _strip_fences(title_future.result())
-            tags_raw = _strip_fences(tags_future.result())
-
-        title_data = json.loads(title_raw)
-        tags_list = json.loads(tags_raw)
+        try:
+            title_data = json.loads(_extract_json(title_raw, "object"))
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse title/summary JSON, raw: %s", title_raw[:500])
+            raise
+        try:
+            tags_list = json.loads(_extract_json(tags_raw, "array"))
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse tags JSON, raw: %s", tags_raw[:500])
+            raise
 
         # Enforce ASCII lowercase for tags
         tags = [t.lower().strip() for t in tags_list if t.isascii()][:5]
